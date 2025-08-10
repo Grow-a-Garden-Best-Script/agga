@@ -1,0 +1,288 @@
+print("Hello, World!")
+
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+local Window = Rayfield:CreateWindow{
+    Name = "Egg ESP by DarkSpawner",
+    Icon = 0,
+    LoadingTitle = "Egg ESP Loading...",
+    LoadingSubtitle = "by Darkspawner",
+    ShowText = "Rayfield",
+    Theme = "Default",
+    ToggleUIKeybind = "K",
+    DisableRayfieldPrompts = false,
+    DisableBuildWarnings = false,
+    ConfigurationSaving = {Enabled=true, FileName="Darkspawner_EggESP"},
+    Discord = {Enabled=false, Invite="noinvitelink", RememberJoins=true},
+    KeySystem = false,
+    KeySettings = {Title="Untitled", FileName="Key", SaveKey=true, Key={"Hello"}}
+}
+
+local PetData = {
+    ["Common Egg"] = {["Golden Lab"]=33.33, ["Dog"]=33.33, ["Bunny"]=33.33},
+    ["Uncommon Egg"] = {["Black Bunny"]=25, ["Chicken"]=25, ["Cat"]=25, ["Deer"]=25},
+    -- (shortened for brevity)
+    ["Gourmet Egg"] = {["Bagel Bunny"]=50, ["Pancake Mole"]=38, ["Sushi Bear"]=7, ["Spaghetti Sloth"]=4, ["French Fry Ferret"]=1}
+}
+
+local EggVisuals, VisualsEnabled, AutoRerollEnabled = {}, false, false
+local RerollSpeed = 0.5
+local SelectedPet = ""
+local AutoRerollConnection
+local PausedEggs = {}
+local SavedPredictions = {}
+
+local function getRandomPet(eggName)
+    local pets = PetData[eggName]
+    if not pets then return "Unknown Pet" end
+    local totalWeight = 0
+    local weightedPets = {}
+    for pet, weight in pairs(pets) do
+        totalWeight = totalWeight + weight
+        weightedPets[#weightedPets + 1] = {pet, weight}
+    end
+    local rand = math.random() * totalWeight
+    local sum = 0
+    for i=1,#weightedPets do
+        sum = sum + weightedPets[i][2]
+        if rand <= sum then return weightedPets[i][1] end
+    end
+    return weightedPets[1][1]
+end
+
+local function findPlayerFarm()
+    local plr = game.Players.LocalPlayer
+    if not workspace:FindFirstChild("Farm") then return nil end
+    local name = plr.Name
+    local farms = workspace.Farm:GetChildren()
+    for i=1,#farms do
+        local farm = farms[i]
+        if farm.Name == "Farm" and farm:FindFirstChild("Important") then
+            local owner = farm.Important:FindFirstChild("Data")
+            if owner then
+                owner = owner:FindFirstChild("Owner")
+                if owner and tostring(owner.Value) == name then
+                    return farm
+                end
+            end
+        end
+    end
+    Rayfield:Notify({Title="Farm Not Found", Content="Could not locate your farm", Duration=3, Image=4483346149})
+    return nil
+end
+
+local function createEggVisual(egg)
+    local eggName = egg:GetAttribute("EggName") or "Unknown Egg"
+    local highlight = Instance.new("Highlight")
+    highlight.FillColor = Color3.new(1,0,0)
+    highlight.FillTransparency = 0.5
+    highlight.OutlineColor = Color3.new(1,0,0)
+    highlight.OutlineTransparency = 0
+    highlight.Parent = egg
+
+    local billboard = Instance.new("BillboardGui")
+    billboard.Size = UDim2.new(0,150,0,50)
+    billboard.Adornee = egg
+    billboard.AlwaysOnTop = true
+    billboard.StudsOffset = Vector3.new(0,3,0)
+    billboard.Parent = workspace
+
+    local eggId = tostring(egg)
+    local petName = SavedPredictions[eggId] or getRandomPet(eggName)
+    SavedPredictions[eggId] = petName
+
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(1,0,1,0)
+    label.BackgroundTransparency = 1
+    label.Text = petName
+    label.TextColor3 = Color3.new(1,0,0)
+    label.TextStrokeTransparency = 0
+    label.TextStrokeColor3 = Color3.new(0,0,0)
+    label.Font = Enum.Font.GothamBold
+    label.TextSize = 14
+    label.TextWrapped = true
+    label.Visible = false
+    label.Parent = billboard
+
+    return {highlight=highlight, billboard=billboard, textLabel=label, eggName=eggName, eggId=eggId}
+end
+
+local function updateEggVisuals()
+    if not VisualsEnabled then return end
+    local farm = findPlayerFarm()
+    if not farm then return end
+    local important = farm:FindFirstChild("Important")
+    if not important or not important:FindFirstChild("Objects_Physical") then return end
+
+    for _,v in pairs(EggVisuals) do
+        if v.highlight then v.highlight:Destroy() end
+        if v.billboard then v.billboard:Destroy() end
+    end
+    EggVisuals = {}
+
+    local total, ready, yours = 0, 0, 0
+    local playerName = game.Players.LocalPlayer.Name
+    local objects = important.Objects_Physical:GetChildren()
+
+    for i=1,#objects do
+        local obj = objects[i]
+        if obj.Name == "PetEgg" then
+            total = total + 1
+            if obj:GetAttribute("READY") then ready = ready + 1 end
+            if obj:GetAttribute("OWNER") == playerName then
+                yours = yours + 1
+                EggVisuals[obj] = createEggVisual(obj)
+            end
+        end
+    end
+
+    Rayfield:Notify({Title="Eggs Found", Content=("Total: %d | Ready: %d | Yours: %d"):format(total, ready, yours), Duration=4, Image=4483346149})
+    Rayfield:Notify({Title="Visuals Created", Content=("Created %d egg visuals"):format(yours), Duration=3, Image=4483346149})
+
+    wait(0.1)
+    showAvailablePets()
+end
+
+function rerollPredictions()
+    for egg, visual in pairs(EggVisuals) do
+        if not PausedEggs[egg] and visual.textLabel then
+            local newPet = getRandomPet(visual.eggName)
+            visual.textLabel.Text = newPet
+            visual.textLabel.Visible = true
+            SavedPredictions[visual.eggId] = newPet
+            if SelectedPet ~= "" and newPet == SelectedPet then
+                PausedEggs[egg] = true
+                Rayfield:Notify({Title="Pet Found!", Content="Found " .. SelectedPet .. " on an egg!", Duration=3, Image=4483346149})
+            end
+        end
+    end
+end
+
+local function toggleVisuals(state)
+    VisualsEnabled = state
+    if state then
+        updateEggVisuals()
+    else
+        for _,v in pairs(EggVisuals) do
+            if v.highlight then v.highlight:Destroy() end
+            if v.billboard then v.billboard:Destroy() end
+        end
+        EggVisuals = {}
+        PausedEggs = {}
+    end
+end
+
+local function handleAutoReroll()
+    if AutoRerollConnection then AutoRerollConnection:Disconnect() end
+    if AutoRerollEnabled and VisualsEnabled then
+        AutoRerollConnection = game:GetService("RunService").Heartbeat:Connect(function()
+            wait(RerollSpeed)
+            rerollPredictions()
+        end)
+    end
+end
+
+function showAvailablePets()
+    if not VisualsEnabled or not next(EggVisuals) then return end
+    local groups = {}
+    for egg, visual in pairs(EggVisuals) do
+        groups[visual.eggName] = groups[visual.eggName] or {}
+        if PetData[visual.eggName] then
+            for pet in pairs(PetData[visual.eggName]) do
+                groups[visual.eggName][pet] = true
+            end
+        end
+    end
+    for eggName, pets in pairs(groups) do
+        local petList = {}
+        for petName in pairs(pets) do
+            petList[#petList + 1] = petName
+        end
+        table.sort(petList)
+        Rayfield:Notify({
+            Title = eggName .. " (" .. #petList .. " pets)",
+            Content = table.concat(petList, ", "),
+            Duration = 6,
+            Image = 4483346149
+        })
+        wait(0.2)
+    end
+end
+
+local EggTab = Window:CreateTab("Pet Egg ESP", 4483346149)
+
+EggTab:CreateToggle({
+    Name = "Pet Egg Visuals",
+    CurrentValue = false,
+    Flag = "PetEggVisualsToggle",
+    Callback = toggleVisuals,
+})
+
+EggTab:CreateButton({
+    Name = "Reroll Predictions",
+    Callback = function()
+        if VisualsEnabled then
+            PausedEggs = {}
+            rerollPredictions()
+            Rayfield:Notify({Title="Rerolled", Content="Pet predictions have been rerolled!", Duration=2, Image=4483346149})
+        else
+            Rayfield:Notify({Title="Enable Visuals First", Content="Please enable Pet Egg Visuals first!", Duration=3, Image=4483346149})
+        end
+    end,
+})
+
+EggTab:CreateToggle({
+    Name = "Auto Reroll",
+    CurrentValue = false,
+    Flag = "AutoRerollToggle",
+    Callback = function(val)
+        AutoRerollEnabled = val
+        handleAutoReroll()
+    end,
+})
+
+EggTab:CreateSlider({
+    Name = "Auto Reroll Speed",
+    Range = {0,10},
+    Increment = 1,
+    Suffix = " (0.5s)",
+    CurrentValue = 1,
+    Flag = "RerollSpeedSlider",
+    Callback = function(val)
+        RerollSpeed = (val == 0) and 0.25 or val * 0.5
+        if AutoRerollEnabled then handleAutoReroll() end
+    end,
+})
+
+EggTab:CreateInput({
+    Name = "Selected Pet (Case Sensitive)",
+    PlaceholderText = "Enter pet name here...",
+    RemoveTextAfterFocusLost = false,
+    Flag = "SelectedPetInput",
+    Callback = function(txt)
+        SelectedPet = txt
+        PausedEggs = {}
+    end,
+})
+
+EggTab:CreateButton({
+    Name = "Show Available Pets",
+    Callback = function()
+        if VisualsEnabled and next(EggVisuals) then
+            showAvailablePets()
+        else
+            Rayfield:Notify({Title="Enable Visuals First", Content="Please enable Pet Egg Visuals first!", Duration=3, Image=4483346149})
+        end
+    end,
+})
+
+EggTab:CreateSection("How to Use")
+
+EggTab:CreateParagraph({
+    Title = "Instructions",
+    Content = "1. Enable Pet Egg Visuals to see red highlights on your eggs\n2. Use Reroll to change predictions\n3. Enter a pet name to auto-pause when found\n4. Auto Reroll will continuously change predictions\n5. Show Available Pets displays all possible pets from your eggs"
+})
+
+EggTab:CreateParagraph({
+    Title = "Credits",
+    Content = "Egg ESP by DarkSpawner\nPet Egg Predictor Script for Grow A Garden"
+})
