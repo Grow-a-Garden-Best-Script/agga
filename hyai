@@ -1,0 +1,111 @@
+print("Hello, World!")
+
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+local Window = Rayfield:CreateWindow{
+    Name = "Egg ESP Minimal",
+    LoadingTitle = "Loading...",
+    Theme = "Default",
+    ToggleUIKeybind = "K",
+}
+
+local PetData = {
+    ["Common Egg"] = {
+        ["Dog"] = 50,
+        ["Bunny"] = 50,
+    },
+    ["Rare Egg"] = {
+        ["Pig"] = 70,
+        ["Monkey"] = 30,
+    }
+}
+
+local EggVisuals = {}
+local VisualsEnabled = false
+local SavedPredictions = {}
+
+local function getRandomPet(eggName)
+    local pets = PetData[eggName]
+    if not pets then return "Unknown Pet" end
+    local totalWeight = 0
+    local weightedPets = {}
+    for pet, weight in pairs(pets) do
+        totalWeight = totalWeight + weight
+        table.insert(weightedPets, {pet, weight})
+    end
+    local rand = math.random() * totalWeight
+    local sum = 0
+    for _, p in ipairs(weightedPets) do
+        sum = sum + p[2]
+        if rand <= sum then
+            return p[1]
+        end
+    end
+    return weightedPets[1][1]
+end
+
+local function createEggVisual(egg)
+    local eggName = egg:GetAttribute("EggName") or "Unknown Egg"
+    local highlight = Instance.new("Highlight")
+    highlight.FillColor = Color3.new(1,0,0)
+    highlight.Parent = egg
+
+    local billboard = Instance.new("BillboardGui")
+    billboard.Size = UDim2.new(0, 150, 0, 50)
+    billboard.Adornee = egg
+    billboard.AlwaysOnTop = true
+    billboard.Parent = workspace
+
+    local petName = SavedPredictions[tostring(egg)] or getRandomPet(eggName)
+    SavedPredictions[tostring(egg)] = petName
+
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(1,0,1,0)
+    label.BackgroundTransparency = 1
+    label.Text = petName
+    label.TextColor3 = Color3.new(1,0,0)
+    label.Parent = billboard
+
+    return {highlight = highlight, billboard = billboard, label = label}
+end
+
+local function updateEggVisuals()
+    if not VisualsEnabled then return end
+
+    -- For demo: find all "PetEgg" in workspace
+    for _, obj in pairs(workspace:GetChildren()) do
+        if obj.Name == "PetEgg" then
+            if EggVisuals[obj] then
+                -- cleanup old visuals
+                local v = EggVisuals[obj]
+                if v.highlight then v.highlight:Destroy() end
+                if v.billboard then v.billboard:Destroy() end
+            end
+            EggVisuals[obj] = createEggVisual(obj)
+        end
+    end
+
+    Rayfield:Notify({
+        Title = "Visuals Updated",
+        Content = "Created visuals for your eggs.",
+        Duration = 3
+    })
+end
+
+local EggTab = Window:CreateTab("Egg ESP", 4483346149)
+
+EggTab:CreateToggle({
+    Name = "Toggle Visuals",
+    CurrentValue = false,
+    Callback = function(state)
+        VisualsEnabled = state
+        if state then
+            updateEggVisuals()
+        else
+            for egg, visual in pairs(EggVisuals) do
+                if visual.highlight then visual.highlight:Destroy() end
+                if visual.billboard then visual.billboard:Destroy() end
+            end
+            EggVisuals = {}
+        end
+    end,
+})
